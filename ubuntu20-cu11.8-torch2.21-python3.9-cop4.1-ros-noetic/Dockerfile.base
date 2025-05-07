@@ -1,0 +1,134 @@
+# syntax = docker/dockerfile:1.5
+FROM ubuntu:20.04
+
+# 设置镜像源
+RUN sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    apt-get update && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get install -y --no-install-recommends \
+        wget vim gcc bash unzip tar xz-utils git \
+        libx11-6 libxcb1 libxau6 libgl1-mesa-dev \
+        xvfb dbus-x11 x11-utils libxkbcommon-x11-0 \
+        libavcodec-dev libavformat-dev libswscale-dev \
+        python3-dev build-essential \
+        libssl-dev libffi-dev python3-pip \
+        libraw1394-11 libmpfr6 libusb-1.0-0 && \
+    apt-get autoclean -y && apt-get autoremove -y && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 设置时区
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tzdata && \
+    rm -rf /var/lib/apt/lists/*
+
+# 安装 GPG 密钥
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends dirmngr gnupg2 && \
+    rm -rf /var/lib/apt/lists/*
+
+# 添加 ROS 源
+RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 && \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/ros/ubuntu/ focal main" > /etc/apt/sources.list.d/ros1-latest.list
+
+# 设置环境变量
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
+ENV ROS_DISTRO noetic
+ENV ROSDISTRO_INDEX_URL https://mirrors.tuna.tsinghua.edu.cn/rosdistro/index-v4.yaml
+
+# 安装 ROS 基础包
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ros-noetic-ros-core=1.5.0-1* && \
+    rm -rf /var/lib/apt/lists/*
+
+# 安装 ROS 相关工具
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3-rosdep python3-rosinstall python3-vcstools ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 初始化 rosdep
+RUN mkdir -p /etc/ros/rosdep/sources.list.d/ && \
+    wget http://mirrors.tuna.tsinghua.edu.cn/github-raw/ros/rosdistro/master/rosdep/sources.list.d/20-default.list -O /etc/ros/rosdep/sources.list.d/20-default.list && \
+    rosdep update --rosdistro $ROS_DISTRO
+
+# 安装 ROS 基础包
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ros-noetic-ros-base=1.5.0-1* ros-noetic-image-transport ros-noetic-tf && \
+    rm -rf /var/lib/apt/lists/*
+
+# 设置 bashrc
+RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
+
+################## 下载 CoppeliaSim #################
+# 下载并解压 CoppeliaSim
+ADD download/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04.tar.xz /opt
+
+# 创建非 root 用户
+RUN groupadd -g 1000 randuser && \
+    useradd -d /home/randuser -s /bin/bash -m randuser -u 1000 -g 1000
+
+USER randuser
+ENV HOME /home/randuser
+ENV PATH /home/randuser/.local/bin:$PATH
+WORKDIR /home/randuser
+
+# 创建工作目录
+RUN mkdir -p /home/randuser/shared /home/randuser/workspace /home/randuser/models
+
+# 复制 Hugging Face 模型
+ADD download/models.tar.gz /home/randuser/models
+
+# 设置 pip 镜像并升级 pip
+RUN python3 -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 安装 Python 包
+RUN --mount=type=cache,target=/home/randuser/.cache/pip,uid=1000,gid=1000 \
+    python3 -m pip install --upgrade pip && \
+    python3 -m pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu118 && \
+    python3 -m pip install accelerate transformers tensorboard hickle git+https://github.com/cheind/py-thin-plate-spline
+
+RUN --mount=type=cache,target=/home/randuser/.cache/pip,uid=1000,gid=1000 \
+    python3 -m pip install openai plotly transforms3d open3d pyzmq cbor opencv-python-headless progressbar2 gdown gitpython \
+    msgpack-rpc-python cffi websocket-client imageio pyvirtualdisplay
+
+
+# 设置 CoppeliaSim 环境变量
+ENV COPPELIASIM_ROOT=/opt/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$COPPELIASIM_ROOT
+ENV QT_QPA_PLATFORM_PLUGIN_PATH=$COPPELIASIM_ROOT
+ENV PATH=$COPPELIASIM_ROOT:$PATH
+
+
+# 安装 PyRep
+RUN git clone https://github.com/stepjam/PyRep.git --depth 1 && \
+    cd PyRep && \
+    python3 -m pip install -r requirements.txt && \
+    python3 -m pip install . && \
+    cd .. && rm -rf PyRep
+# 安装 RLBench
+    # git clone https://github.com/stepjam/RLBench.git --depth 1 && \
+    # cd RLBench && \
+    # python3 -m pip install -r requirements.txt && \
+    # python3 -m pip install . && \
+    # cd .. && rm -rf RLBench
+
+# 安装缺失的 ROS 依赖
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ros-noetic-tf2-geometry-msgs ros-noetic-tf2-sensor-msgs ros-noetic-cv-bridge ros-noetic-move-base-msgs && \
+    rm -rf /var/lib/apt/lists/*
+
+# 设置用户权限和密码
+RUN usermod -G sudo randuser
+RUN echo 'randuser:1' | chpasswd
+
+USER randuser
+
+# 设置工作目录
+WORKDIR /home/randuser/workspace
+
+# 设置默认命令
+CMD [ "/bin/bash" ]

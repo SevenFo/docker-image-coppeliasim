@@ -1,0 +1,29 @@
+FROM osrf/ros:humble-desktop-full-jammy
+
+# 设置镜像源
+RUN sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    apt-get update && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get install -y --no-install-recommends \
+        wget vim gcc bash unzip tar xz-utils git \
+        libx11-6 libxcb1 libxau6 libgl1-mesa-dev \
+        xvfb dbus-x11 x11-utils libxkbcommon-x11-0 \
+        libavcodec-dev libavformat-dev libswscale-dev \
+        python3-dev build-essential \
+        libssl-dev libffi-dev python3-pip \
+        libraw1394-11 libmpfr6 libusb-1.0-0 && \
+    apt-get autoclean -y && apt-get autoremove -y && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# install issac sim 4.1
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install isaacsim==4.1.0.0 --extra-index-url https://pypi.nvidia.com && \
+    python3 -m pip install isaacsim-extscache-physics==4.1.0.0 isaacsim-extscache-kit==4.1.0.0 isaacsim-extscache-kit-sdk==4.1.0.0 --extra-index-url https://pypi.nvidia.com
+
+# install peg
+
+# 设置工作目录
+WORKDIR /root/workspace
+
+RUN git clone https://github.com/PegasusSimulator/PegasusSimulator.git && cd /root/workspace/PegasusSimulator/extensions && pip install --editable pegasus.simulator

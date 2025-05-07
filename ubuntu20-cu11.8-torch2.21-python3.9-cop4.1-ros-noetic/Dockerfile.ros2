@@ -1,0 +1,67 @@
+# Use the existing Docker image as the base
+FROM voxposer:ubuntu20-cu118-torch221-py38-cop41-ros-noetic-240905
+
+USER root
+
+# Install necessary dependencies for ROS 2 Humble
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common && \
+    add-apt-repository universe && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl  && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    rm -rf /var/lib/apt/lists/* && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# Install necessary dependencies for ROS 2 Humble
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3-flake8-docstrings \
+        python3-pip \
+        python3-pytest-cov \
+        ros-dev-tools && \
+    python3 -m pip install -U \
+        flake8-blind-except \
+        flake8-builtins \
+        flake8-class-newline \
+        flake8-comprehensions \
+        flake8-deprecated \
+        flake8-import-order \
+        flake8-quotes \
+        "pytest>=5.3" \
+        pytest-repeat \
+        pytest-rerunfailures && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN echo "randuser ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt" >> /etc/sudoers
+
+USER randuser
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+# Create a workspace and clone ROS 2 repositories
+RUN mkdir -p ~/ros2_humble/src && \
+    cd ~/ros2_humble && \
+    vcs import --input https://raw.githubusercontent.com/ros2/ros2/humble/ros2.repos src
+
+# Install ROS 2 dependencies using rosdep
+RUN rosdep update && \
+    cd ~/ros2_humble && \
+    unset ROS_DISTRO && sudo apt-get update && rosdep install --from-paths src --ignore-src -y --skip-keys "fastcdr rti-connext-dds-6.0.1 urdfdom_headers"
+
+# Build ROS 2
+RUN unset ROS_DISTRO && cd ~/ros2_humble && \
+    colcon build --symlink-install
+
+# Source ROS 2 setup script
+# RUN echo "source ~/ros2_humble/install/local_setup.bash" >> ~/.bashrc
+
+# Set working directory
+WORKDIR /home/randuser/workspace
+
+# Default command
+CMD [ "/bin/bash" ]

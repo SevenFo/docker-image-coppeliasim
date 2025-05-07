@@ -1,0 +1,44 @@
+FROM nvcr.io/nvidia/isaac-sim:4.2.0
+
+ARG ROS2_APT_PACKAGE=desktop
+ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ENV FASTRTPS_DEFAULT_PROFILES_FILE=/root/.ros/fastdds.xml
+ENV ACCEPT_EULA=Y
+ARG DOCKER_USER_HOME=/root
+
+# 设置镜像源
+RUN sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    apt-get update && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get install -y --no-install-recommends \
+        wget vim gcc bash unzip tar xz-utils git xvfb gnupg2 curl \
+        python3-dev build-essential libssl-dev python3-pip  && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key  -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] https://mirrors.cernet.edu.cn/ros2/ubuntu jammy main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-${ROS2_APT_PACKAGE} \
+    ros-humble-vision-msgs \
+    # Install both FastRTPS and CycloneDDS
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-rmw-fastrtps-cpp \
+    # This includes various dev tools including colcon
+    ros-dev-tools && \
+    apt -y autoremove && apt clean autoclean && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Add sourcing of setup.bash to .bashrc
+    echo "source /opt/ros/humble/setup.bash" >> ${HOME}/.bashrc
+
+COPY .ros/ ${DOCKER_USER_HOME}/.ros/
+ 
+# install peg
+
+# 设置工作目录
+WORKDIR /root/workspace
+
+ENV ISAACSIM_PATH=/isaac-sim
+
+RUN git clone https://github.com/PegasusSimulator/PegasusSimulator.git && cd /root/workspace/PegasusSimulator/extensions && ${ISAACSIM_PATH}/python.sh -m pip install --editable pegasus.simulator
+
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["source /root/.bashrc && exec /bin/bash"]
+
